@@ -1,0 +1,92 @@
+package org.apereo.cas.ticket.support;
+
+import org.apereo.cas.ticket.TicketState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.util.Assert;
+
+import javax.annotation.PostConstruct;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
+
+/**
+ * Provides the Ticket Granting Ticket expiration policy.  Ticket Granting Tickets
+ * can be used any number of times, have a fixed lifetime, and an idle timeout.
+ *
+ * @author William G. Thompson, Jr.
+ * @since 3.4.10
+ */
+public class TicketGrantingTicketExpirationPolicy extends AbstractCasExpirationPolicy {
+
+    /** Serialization support. */
+    private static final long serialVersionUID = 7670537200691354820L;
+
+    /**
+     * The Logger instance for this class. Using a transient instance field for the Logger doesn't work, on object
+     * deserialization the field is null.
+     */
+    private static final Logger LOGGER = LoggerFactory.getLogger(TicketGrantingTicketExpirationPolicy.class);
+
+    /** Maximum time this ticket is valid.  */
+    private long maxTimeToLiveInSeconds;
+
+    /** Time to kill in seconds. */
+    private long timeToKillInSeconds;
+
+    public TicketGrantingTicketExpirationPolicy() {}
+
+    /**
+     * Instantiates a new Ticket granting ticket expiration policy.
+     *
+     * @param maxTimeToLive the max time to live
+     * @param timeToKill the time to kill
+     */
+    public TicketGrantingTicketExpirationPolicy(final long maxTimeToLive, final long timeToKill) {
+        this.maxTimeToLiveInSeconds = maxTimeToLive;
+        this.timeToKillInSeconds = timeToKill;
+    }
+
+
+    /**
+     * After properties set.
+     */
+    @PostConstruct
+    public void afterPropertiesSet() {
+        Assert.isTrue(this.maxTimeToLiveInSeconds >= this.timeToKillInSeconds,
+                "maxTimeToLiveInSeconds must be greater than or equal to timeToKillInSeconds.");
+    }
+
+    @Override
+    public boolean isExpired(final TicketState ticketState) {
+        final ZonedDateTime currentSystemTime = ZonedDateTime.now(ZoneOffset.UTC);
+        final ZonedDateTime creationTime = ticketState.getCreationTime();
+        final ZonedDateTime lastTimeUsed = ticketState.getLastTimeUsed();
+        
+        // Ticket has been used, check maxTimeToLive (hard window)
+        ZonedDateTime expirationTime = creationTime.plus(this.maxTimeToLiveInSeconds, ChronoUnit.SECONDS);
+        if (currentSystemTime.isAfter(expirationTime)) {
+            LOGGER.debug("Ticket is expired because the time since creation is greater than maxTimeToLiveInSeconds");
+            return true;
+        }
+
+        expirationTime = lastTimeUsed.plus(this.timeToKillInSeconds, ChronoUnit.SECONDS);
+        if (currentSystemTime.isAfter(expirationTime)) {
+            LOGGER.debug("Ticket is expired because the time since last use is greater than timeToKillInSeconds");
+            return true;
+        }
+
+        return false;
+    }
+
+    @Override
+    public Long getTimeToLive() {
+        return this.maxTimeToLiveInSeconds;
+    }
+
+    @Override
+    public Long getTimeToIdle() {
+        return this.timeToKillInSeconds;
+    }
+
+}
